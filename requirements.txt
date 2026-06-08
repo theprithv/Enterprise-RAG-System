@@ -1,0 +1,10 @@
+python-dotenv
+pymilvus
+langchain
+langchain-huggingface
+langchain-experimental
+langchain-openai
+docling
+sentence-transformers
+langfuse
+duckduckgo-search

@@ -1,0 +1,30 @@
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Databases and heavy binaries
+milvus_rag.db/
+*.db
+*.sqlite3
+
+# Document Data Storage
+# Ignore all files in documents but keep the folder
+data/documents/*
+!data/documents/.gitkeep
