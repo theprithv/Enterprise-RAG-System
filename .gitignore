@@ -28,3 +28,6 @@ milvus_rag.db/
 # Ignore all files in documents but keep the folder
 data/documents/*
 !data/documents/.gitkeep
+
+# MLflow tracking
+mlartifacts/

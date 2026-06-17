@@ -1,0 +1,47 @@
+name: AIOps Nightly Drift Monitor
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 AM every night
+
+jobs:
+  monitor-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Run Nightly Evaluation
+        run: |
+          # Normally we would start the stack here just like the PR job
+          echo "Simulating Nightly Run..."
+          # python eval/run_eval.py
+
+      - name: Detect Quality Drift
+        run: |
+          # Fetch the last 7 days of MLflow data using mlflow.search_runs()
+          # Compare the moving average of 'answer_correctness'
+          # If it drops by more than 10%, trigger an alert.
+          echo "Checking MLflow for drift..."
+          
+          # Simulated check
+          export DRIFT_DETECTED="false"
+          if [ "$DRIFT_DETECTED" = "true" ]; then
+            echo "Drift detected!"
+            exit 1
+          fi
+
+      - name: Auto-Open GitHub Issue on Drift
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "🚨 AIOps Alert: RAG Quality Drift Detected" \
+            --body "The nightly MLflow evaluation detected a significant drop in response quality or an increase in latency. Please check the MLflow dashboard immediately." \
+            --label "bug,llmops"

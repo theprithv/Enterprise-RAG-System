@@ -8,3 +8,11 @@ docling
 sentence-transformers
 langfuse
 duckduckgo-search
+fastapi
+uvicorn
+pyjwt
+passlib
+bcrypt
+sqlalchemy
+python-multipart
+requests

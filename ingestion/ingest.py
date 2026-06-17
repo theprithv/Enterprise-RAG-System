@@ -103,9 +103,9 @@ def node_load_document(state: IngestionState) -> dict:
             "Please create the folder and add your documents."
         )
 
-    # Collect all supported files in the folder
+    # Collect all supported files recursively in the folder
     all_files = [
-        f for f in sorted(docs_path.iterdir())
+        f for f in sorted(docs_path.rglob('*'))
         if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
     ]
 
@@ -127,7 +127,6 @@ def node_load_document(state: IngestionState) -> dict:
             extension = file_path.suffix.lower()
 
             print(f"  [Docling] Parsing: {file_path.name}...")
-            
             result = converter.convert(str(file_path))
             text = result.document.export_to_markdown()
 
@@ -135,8 +134,18 @@ def node_load_document(state: IngestionState) -> dict:
                 print(f"  [Warning] No text extracted from '{file_path.name}' — skipping.")
                 continue
 
-            # Determine role based on filename
-            assigned_role = "admin" if "secret" in file_path.name.lower() else "user"
+            # Determine role based on parent folder name
+            folder_name = file_path.parent.name.lower()
+            if folder_name == "public":
+                allowed_roles = "[ADMIN][HR_MANAGER][FINANCE_MANAGER][EMPLOYEE]"
+            elif folder_name == "hr":
+                allowed_roles = "[ADMIN][HR_MANAGER]"
+            elif folder_name == "finance":
+                allowed_roles = "[ADMIN][FINANCE_MANAGER]"
+            elif folder_name == "confidential":
+                allowed_roles = "[ADMIN]"
+            else:
+                allowed_roles = "[ADMIN]" # default strict
 
             # Wrap in a LangChain Document (same structure as before)
             doc = Document(
@@ -146,10 +155,10 @@ def node_load_document(state: IngestionState) -> dict:
                     "filename":             file_path.name,
                     "extension":            extension,
                     "file_path":            str(file_path.absolute()),
-                    "parent_document_name": file_path.stem,
+                    "parent_document_name": file_path.parent.name,
                     "document_title":       file_path.stem,
                     "extraction_date":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "required_role":        assigned_role
+                    "allowed_roles":        allowed_roles
                 }
             )
             documents.append(doc)
@@ -236,7 +245,7 @@ def node_store_vectors(state: IngestionState) -> dict:
         FieldSchema(name="parent_document_name", dtype=DataType.VARCHAR, max_length=512),
         FieldSchema(name="document_title", dtype=DataType.VARCHAR, max_length=512),
         FieldSchema(name="extraction_date", dtype=DataType.VARCHAR, max_length=128),
-        FieldSchema(name="required_role", dtype=DataType.VARCHAR, max_length=128),
+        FieldSchema(name="allowed_roles", dtype=DataType.VARCHAR, max_length=512),
     ]
     schema = CollectionSchema(fields=fields, description="RAG Knowledge Base with strict Metadata")
 
@@ -257,7 +266,7 @@ def node_store_vectors(state: IngestionState) -> dict:
             "parent_document_name": chunk.metadata.get("parent_document_name", ""),
             "document_title":       chunk.metadata.get("document_title", ""),
             "extraction_date":      chunk.metadata.get("extraction_date", ""),
-            "required_role":        chunk.metadata.get("required_role", "user")
+            "allowed_roles":        chunk.metadata.get("allowed_roles", "[ADMIN]")
         })
 
     client.insert(COLLECTION_NAME, data=data)

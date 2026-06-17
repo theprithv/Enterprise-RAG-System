@@ -12,6 +12,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 load_dotenv()  # Reads all values from .env file automatically
 
+# pyrefly: ignore [missing-import]
+import mlflow
+mlflow.autolog()  # Automatically trace LangChain, OpenAI, and Python logic for LLMOps project
+
 # We now use the Langfuse wrapper to automatically track telemetry!
 # pyrefly: ignore [missing-import]
 from langfuse.openai import OpenAI
@@ -32,9 +36,6 @@ VLLM_API_BASE    = os.getenv("VLLM_API_BASE",      "http://localhost:8000/v1")
 VLLM_API_KEY     = os.getenv("VLLM_API_KEY",       "sk-dummy")
 BRAVE_API_KEY    = os.getenv("BRAVE_API_KEY",      "")
 
-# SECURE RBAC: Define the role of the person currently using this script.
-# (If an employee is logged in, this would be set by your web backend)
-CURRENT_USER_ROLE = "admin"
 # ──────────────────────────────────────────────────────────
 
 
@@ -87,7 +88,7 @@ def load_vector_store():
 # STEP 2: Search the vector store for relevant chunks
 # ============================================================
 
-def retrieve_context(vector_db, question, k=5):
+def retrieve_context(vector_db, question, user_role, k=5):
     """
     k=5 means: retrieve the 5 most relevant chunks.
     With 13 chunks total, k=5 covers 38% of the knowledge base per query.
@@ -100,17 +101,18 @@ def retrieve_context(vector_db, question, k=5):
     vec = embedder.embed_query(question)
     
     # Secure RBAC Logic
-    if CURRENT_USER_ROLE == "admin":
-        allowed_roles = "['admin', 'user']"  # Admins see everything
-    else:
-        allowed_roles = "['user']"           # Users only see user files
+    # We look for the user's role in the allowed_roles string, e.g. "[EMPLOYEE]"
+    filter_expr = f'allowed_roles LIKE "%[{user_role}]%"'
+
+    # Ensure collection is loaded in memory before searching
+    client.load_collection(COLLECTION_NAME)
 
     results = client.search(
         collection_name=COLLECTION_NAME,   # reads from .env
         data=[vec],
         limit=k,
-        filter=f"required_role in {allowed_roles}",
-        output_fields=["text", "source", "parent_document_name", "document_title", "file_path", "extraction_date", "required_role"]
+        filter=filter_expr,
+        output_fields=["text", "source", "parent_document_name", "document_title", "file_path", "extraction_date", "allowed_roles"]
     )
 
     docs = []
@@ -125,7 +127,7 @@ def retrieve_context(vector_db, question, k=5):
                     "document_title":       entity.get("document_title", ""),
                     "file_path":            entity.get("file_path", ""),
                     "extraction_date":      entity.get("extraction_date", ""),
-                    "required_role":        entity.get("required_role", "user")
+                    "allowed_roles":        entity.get("allowed_roles", "")
                 }
             ))
 
@@ -161,7 +163,6 @@ def generate_answer(system_prompt, user_prompt):
     )
 
     response = client.chat.completions.create(
-        name="generate_answer",
         model=VLLM_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -202,75 +203,87 @@ def perform_web_search(query):
 
 
 # ============================================================
-# STEP 5: Run the full retrieval loop
+# STEP 5: API Entry Point
 # ============================================================
 
-def run():
+# Global variable to hold the loaded vector store in memory
+_vector_db_cache = None
 
-    # Load the knowledge base (stored by ingest.py)
-    vector_db = load_vector_store()
+def get_rag_response(question: str, user_role: str):
+    global _vector_db_cache
+    if _vector_db_cache is None:
+        _vector_db_cache = load_vector_store()
 
-    print("=" * 55)
-    print("  RAG SYSTEM READY")
-    print("  Type your question. Type 'exit' to quit.")
-    print("=" * 55)
+    # Step A: Find relevant chunks from vector store using RBAC
+    print(f"\nSearching knowledge base for role [{user_role}]...")
+    retrieved_chunks = retrieve_context(_vector_db_cache, question, user_role, k=5)
 
-    while True:
+    if not retrieved_chunks:
+        return "Access denied or no relevant documents found. You don't have permission to access this information."
 
-        question = input("\nYour question: ").strip()
+    print(f"Found {len(retrieved_chunks)} relevant chunk(s):")
+    sources = set()
+    for i, chunk in enumerate(retrieved_chunks):
+        source_file = os.path.basename(chunk.metadata.get("source", "Unknown"))
+        sources.add(source_file)
+        preview = chunk.page_content[:80].replace('\n', ' ').strip()
+        print(f"  [{i+1}] (From: {source_file}) {preview}...")
 
-        if question.lower() == "exit":
-            print("Goodbye.")
-            break
+    # Step B: Build prompt with context + question
+    sys_prompt, usr_prompt = build_prompt(question, retrieved_chunks)
 
-        if not question:
-            continue
+    # Step C: Get answer from LLM
+    print("\nGenerating answer...")
+    answer = generate_answer(sys_prompt, usr_prompt)
 
-        # Step A: Find relevant chunks from vector store
-        print("\nSearching knowledge base...")
-        retrieved_chunks = retrieve_context(vector_db, question, k=5)
-
-        print(f"Found {len(retrieved_chunks)} relevant chunk(s):")
-        for i, chunk in enumerate(retrieved_chunks):
-            source_file = os.path.basename(chunk.metadata.get("source", "Unknown"))
-            # Clean up newlines for a cleaner preview
-            preview = chunk.page_content[:80].replace('\n', ' ').strip()
-            print(f"  [{i+1}] (From: {source_file}) {preview}...")
-
-        # Step B: Build prompt with context + question
-        sys_prompt, usr_prompt = build_prompt(question, retrieved_chunks)
-
-        # Step C: Get answer from LLM
-        print("\nGenerating answer...")
-        answer = generate_answer(sys_prompt, usr_prompt)
-
-        # Step D: Check if we need to fallback to the Web
-        fallback_phrases = ["don't have", "do not have", "not in the information", "not provided", "cannot answer"]
-        needs_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
+    # Step D: Check if we need to fallback to the Web
+    fallback_phrases = ["don't have", "do not have", "not in the information", "not provided", "cannot answer"]
+    needs_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
+    
+    if needs_fallback:
+        print("\n  [!] Local knowledge base lacked information.")
+        print("  [!] Triggering Agentic Web Search (DuckDuckGo)...")
         
-        if needs_fallback:
-            print("\n  [!] Local knowledge base lacked information.")
-            print("  [!] Triggering Agentic Web Search (DuckDuckGo)...")
-            
-            web_context = perform_web_search(question)
-            
-            if "[Error]" in web_context:
-                print(f"  {web_context}")
-            else:
-                print("  [✓] Web search successful. Synthesizing final answer from live data...")
-                
-                # STRICT PROMPT TO PREVENT HALLUCINATION
-                web_sys_prompt = "You are an AI assistant with live internet access. Answer ONLY using the web search results. If the results do not explicitly contain the answer, say 'I cannot find a reliable answer on the web.' DO NOT guess."
-                web_usr_prompt = f"Web Search Results:\n{web_context}\n\nQuestion:\n{question}"
-                
-                answer = generate_answer(web_sys_prompt, web_usr_prompt)
+        web_context = perform_web_search(question)
+        
+        if "[Error]" in web_context:
+            print(f"  {web_context}")
+        else:
+            print("  [✓] Web search successful. Synthesizing final answer from live data...")
+            web_sys_prompt = "You are an AI assistant with live internet access. Answer ONLY using the web search results. If the results do not explicitly contain the answer, say 'I cannot find a reliable answer on the web.' DO NOT guess."
+            web_usr_prompt = f"Web Search Results:\n{web_context}\n\nQuestion:\n{question}"
+            answer = generate_answer(web_sys_prompt, web_usr_prompt)
+            sources.add("Web Search (DuckDuckGo)")
 
-        print("\n" + "═" * 60)
-        print(" 🤖 ANSWER:")
-        print(" " + "-" * 58)
-        print(f" {answer}")
-        print("═" * 60)
+    source_str = "\nSource:\n" + "\n".join(sources)
+    return answer + "\n" + source_str
+
+
+# ============================================================
+# STEP 6: MLflow Evaluation Wrapper
+# ============================================================
+@mlflow.trace(name="rag_agent")
+def predict_fn(inputs):
+    """
+    Wrapper function required by mlflow.genai.evaluate()
+    """
+    import pandas as pd
+    if isinstance(inputs, pd.DataFrame):
+        queries = inputs.get("inputs", inputs.get("questions", inputs.iloc[:, 0]))
+        return [get_rag_response(str(q), "FINANCE_MANAGER") for q in queries]
+    elif isinstance(inputs, pd.Series) or isinstance(inputs, list):
+        return [get_rag_response(str(q), "FINANCE_MANAGER") for q in inputs]
+    elif isinstance(inputs, dict):
+        query = inputs.get("query", inputs.get("questions", ""))
+        user_role = inputs.get("role", "FINANCE_MANAGER")
+        return get_rag_response(query, user_role)
+    else:
+        # Fallback if passed as string
+        query = str(inputs)
+        user_role = "FINANCE_MANAGER"
+        return get_rag_response(query, user_role)
+
 
 
 if __name__ == "__main__":
-    run()
+    pass

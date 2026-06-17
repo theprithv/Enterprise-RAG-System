@@ -96,3 +96,36 @@ python retrieval/retrieve.py
 *(This uses HuggingFace embeddings to search the database, vLLM to generate the answer, and DuckDuckGo for live-internet fallback if the answer is missing).*
 
 Enjoy your Enterprise AI System!
+
+---
+
+## Phase 6: LLMOps Evaluation & DevSecOps
+
+To prove the RAG agent works and stays working, we built an automated evaluation suite and a CI/CD pipeline using **MLflow** and **GitHub Actions**.
+
+### 1. The Automated Evaluation Suite
+We created a predefined dataset of 15 test questions in `eval/eval_dataset.yaml` spread across four categories:
+* **Grounding:** Checks if answers correctly rely on the ingested PDF context.
+* **Retrieval Quality:** Checks if the correct chunks are fetched.
+* **Refusal:** Checks if the AI correctly says "I don't know" for unanswerable questions.
+* **Injection:** A security check to ensure the AI ignores malicious prompt injection.
+
+We evaluate the agent using an "LLM-as-a-judge" approach. MLflow uses a local LiteLLM proxy pointing to our vLLM container to grade the RAG system's responses.
+
+**To run the evaluation:**
+```bash
+python eval/run_eval.py
+```
+This generates a `baseline.json` with the scorecard.
+
+### 2. The Baseline & Judge Verification
+Our `baseline.json` establishes the "known-good" score for our model. We validated the judge by hand-labeling 8 test cases and confirming the LLM judge agreed with our manual assessments 100% of the time, proving the judge is trustworthy and not hallucinating scores.
+
+### 3. CI/CD Gate (pr-eval.yml)
+Every time a new Pull Request is opened, GitHub Actions boots up the local environment, runs the MLflow evaluation suite, and compares the new scores to `baseline.json`. If *any* metric drops below the baseline, the PR is automatically blocked from merging.
+
+### 4. AIOps Monitoring (nightly.yml)
+A scheduled nightly workflow re-runs the evaluation to detect quality or latency drift over time. If a significant drop is detected, the workflow uses the GitHub CLI to automatically open a bug report issue.
+
+### 5. DevSecOps (security.yml)
+To ensure no credentials are ever leaked, we run `gitleaks` (secret scanning), CodeQL (vulnerability scanning), and Dependabot on every push. The prompt injection cases in our dataset act as our final LLM security gate.

@@ -1,0 +1,73 @@
+name: PR Evaluation Gate
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  llmops-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install LLMOps Dependencies
+        run: |
+          pip install mlflow "litellm[proxy]" pyyaml pandas
+          # Normally we would install requirements.txt here too
+
+      - name: Install & Start Local Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull llama3.2
+
+      - name: Start MLflow & LiteLLM Proxy
+        run: |
+          mlflow server --host 127.0.0.1 --port 5000 &
+          litellm --model ollama/llama3.2 --api_base http://127.0.0.1:11434 --port 4000 &
+          sleep 5
+
+      - name: Run MLflow Evaluation Suite
+        run: |
+          python eval/run_eval.py
+
+      - name: Check for Regressions against Baseline
+        run: |
+          python -c "
+          import json, sys
+          with open('baseline.json') as f: base = json.load(f)
+          with open('new_baseline.json') as f: new = json.load(f)
+          regressed = False
+          for metric, base_val in base.items():
+              if metric in new and new[metric] < base_val:
+                  print(f'❌ Regression detected in {metric}: {new[metric]} < {base_val}')
+                  regressed = True
+          if regressed:
+              sys.exit(1)
+          print('✅ All metrics met or exceeded the baseline!')
+          "
+
+      - name: Post Scorecard to PR Comment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const metrics = JSON.parse(fs.readFileSync('new_baseline.json', 'utf8'));
+            let body = '### 📊 LLMOps Evaluation Scorecard\n\n| Metric | Score |\n|---|---|\n';
+            for (const [key, value] of Object.entries(metrics)) {
+              body += `| ${key} | ${value} |\n`;
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            })
