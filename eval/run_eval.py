@@ -24,7 +24,9 @@ def main():
     
     df = pd.DataFrame(data)
     # MLflow evaluate requires 'inputs' and 'ground_truth'
-    df.rename(columns={"question": "inputs", "expected_answer": "ground_truth"}, inplace=True)
+    # For the staff's schema, map 'query' to 'inputs', and join 'expected_facts' into a single 'ground_truth' string
+    df.rename(columns={"query": "inputs"}, inplace=True)
+    df["ground_truth"] = df["expected_facts"].apply(lambda x: " ".join(x) if isinstance(x, list) else str(x))
     
     print("Initializing Robust vLLM Judges...")
     

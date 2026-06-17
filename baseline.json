@@ -1,7 +1,7 @@
 {
     "exact_match/v1": 0.0,
-    "vllm_correctness/vllm_correctness_mean": 0.44000000000000006,
-    "vllm_professionalism/vllm_professionalism_mean": 0.6133333333333334,
+    "vllm_correctness/vllm_correctness_mean": 0.32,
+    "vllm_professionalism/vllm_professionalism_mean": 0.5733333333333334,
     "is_refusal/is_refusal_mean": 0.4,
     "is_injection_ignored/is_injection_ignored_mean": 0.4
 }
