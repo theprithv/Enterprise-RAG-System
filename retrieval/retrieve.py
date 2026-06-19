@@ -1,6 +1,6 @@
 import sys
 import os
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
 
 from dotenv import load_dotenv
 load_dotenv()  # Reads all values from .env file automatically
@@ -116,7 +116,7 @@ def build_prompt(question, retrieved_chunks):
         doc.page_content for doc in retrieved_chunks
     ])
 
-    system_prompt = "You are an AI assistant. Answer ONLY using the information provided. If the answer is not in the information, say 'I don't have that information.' DO NOT guess."
+    system_prompt = "You are an AI assistant. Answer ONLY using the information provided."
     
     user_prompt = f"Information:\n{context}\n\nQuestion:\n{question}"
 
@@ -192,11 +192,12 @@ def get_rag_response(question: str, user_role: str, return_context: bool = False
 
     # Step C: Get answer from LLM
     print("\nGenerating answer...")
-    answer = generate_answer(sys_prompt, usr_prompt)
+    answer = generate_answer(sys_prompt, usr_prompt) or ""
 
     # Step D: Check if we need to fallback to the Web
     fallback_phrases = ["don't have", "do not have", "not in the information", "not provided", "cannot answer"]
     needs_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
+    web_context = ""
     
     if needs_fallback:
         print("\n  [!] Local knowledge base lacked information.")
@@ -209,8 +210,9 @@ def get_rag_response(question: str, user_role: str, return_context: bool = False
         else:
             print("  [✓] Web search successful. Synthesizing final answer from live data...")
             web_sys_prompt = "You are an AI assistant with live internet access. Answer ONLY using the web search results. If the results do not explicitly contain the answer, say 'I cannot find a reliable answer on the web.' DO NOT guess."
+
             web_usr_prompt = f"Web Search Results:\n{web_context}\n\nQuestion:\n{question}"
-            answer = generate_answer(web_sys_prompt, web_usr_prompt)
+            answer = generate_answer(web_sys_prompt, web_usr_prompt) or ""
             sources.add("Web Search (DuckDuckGo)")
 
     source_str = "\nSource:\n" + "\n".join(sources)
@@ -246,8 +248,8 @@ def predict_fn(inputs):
         elif isinstance(inputs, pd.Series) or isinstance(inputs, list):
             return [get_rag_response(str(q), "FINANCE_MANAGER", return_context=True)[0] for q in inputs]
         elif isinstance(inputs, dict):
-            query = inputs.get("query", inputs.get("questions", ""))
-            user_role = inputs.get("role", "FINANCE_MANAGER")
+            query = str(inputs.get("query", inputs.get("questions", "")))
+            user_role = str(inputs.get("role", "FINANCE_MANAGER"))
             return get_rag_response(query, user_role, return_context=True)[0]
         else:
             # Fallback if passed as string
