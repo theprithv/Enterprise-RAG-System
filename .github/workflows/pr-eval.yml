@@ -7,6 +7,9 @@ on:
 jobs:
   llmops-eval:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,7 +22,7 @@ jobs:
       - name: Install LLMOps Dependencies
         run: |
           pip install mlflow pyyaml pandas langchain langchain-huggingface \
-                      pymilvus sentence-transformers openai langfuse duckduckgo-search
+                      "pymilvus[milvus_lite]" sentence-transformers openai langfuse duckduckgo-search
 
       - name: Start MLflow Tracking Server
         run: |
