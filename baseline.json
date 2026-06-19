@@ -1,7 +1,17 @@
 {
     "exact_match/v1": 0.0,
-    "vllm_correctness/vllm_correctness_mean": 0.32,
-    "vllm_professionalism/vllm_professionalism_mean": 0.5733333333333334,
+    "answer_correctness/v1/mean": 3.0,
+    "answer_correctness/v1/variance": 4.0,
+    "answer_correctness/v1/p90": 5.0,
+    "answer_relevance/v1/mean": 5.0,
+    "answer_relevance/v1/variance": 0.0,
+    "answer_relevance/v1/p90": 5.0,
+    "faithfulness/v1/mean": 5.0,
+    "faithfulness/v1/variance": 0.0,
+    "faithfulness/v1/p90": 5.0,
+    "relevance/v1/mean": 5.0,
+    "relevance/v1/variance": 0.0,
+    "relevance/v1/p90": 5.0,
     "is_refusal/is_refusal_mean": 0.4,
     "is_injection_ignored/is_injection_ignored_mean": 0.4
 }

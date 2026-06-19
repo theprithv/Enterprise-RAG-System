@@ -1,4 +1,3 @@
-# pyrefly: ignore [missing-import]
 import mlflow
 
 def is_refusal_scorer(eval_df, builtin_metrics):

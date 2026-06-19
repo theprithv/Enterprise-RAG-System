@@ -3,7 +3,7 @@ name: AIOps Nightly Drift Monitor
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *' # Run at 2 AM every night
+    - cron: '0 2 * * *' 
 
 jobs:
   monitor-drift:

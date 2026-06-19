@@ -15,9 +15,6 @@ database.init_db()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# ----------------------------------------------------
-# DB Bootstrap (Create Admin user if not exists)
-# ----------------------------------------------------
 def bootstrap_admin():
     db = next(database.get_db())
     admin_user = db.query(database.User).filter(database.User.email == "admin@nexacloud.com").first()
@@ -31,9 +28,6 @@ def bootstrap_admin():
 def on_startup():
     bootstrap_admin()
 
-# ----------------------------------------------------
-# Dependencies
-# ----------------------------------------------------
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
     payload = auth.decode_token(token)
     if not payload:
@@ -49,9 +43,6 @@ def require_admin(user: database.User = Depends(get_current_user)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
 
-# ----------------------------------------------------
-# API Models
-# ----------------------------------------------------
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -61,9 +52,6 @@ class UserCreate(BaseModel):
 class QuestionRequest(BaseModel):
     question: str
 
-# ----------------------------------------------------
-# Auth Endpoints
-# ----------------------------------------------------
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     user = db.query(database.User).filter(database.User.email == form_data.username).first()
@@ -73,9 +61,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = auth.create_access_token(data={"user_id": user.id, "email": user.email, "role": user.role, "name": user.name})
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, "name": user.name}
 
-# ----------------------------------------------------
-# RAG Endpoints
-# ----------------------------------------------------
 @app.post("/rag/ask")
 def ask_question(request: QuestionRequest, user: database.User = Depends(get_current_user), db: Session = Depends(database.get_db)):
     
@@ -83,9 +68,6 @@ def ask_question(request: QuestionRequest, user: database.User = Depends(get_cur
     
     return {"answer": answer}
 
-# ----------------------------------------------------
-# Open WebUI Proxy Endpoint (OpenAI Compatible)
-# ----------------------------------------------------
 @app.get("/v1/models")
 async def list_models():
     return JSONResponse(content={
@@ -140,10 +122,6 @@ async def chat_completions(request: Request, db: Session = Depends(database.get_
         "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
     })
 
-
-# ----------------------------------------------------
-# Admin API Endpoints
-# ----------------------------------------------------
 @app.post("/users", dependencies=[Depends(require_admin)])
 def create_user(user: UserCreate, current_user: database.User = Depends(require_admin), db: Session = Depends(database.get_db)):
     existing = db.query(database.User).filter(database.User.email == user.email).first()
@@ -161,10 +139,6 @@ def list_users(db: Session = Depends(database.get_db)):
     users = db.query(database.User).all()
     return [{"name": u.name, "email": u.email, "role": u.role} for u in users]
 
-
-# ----------------------------------------------------
-# Admin Dashboard (HTML)
-# ----------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def admin_dashboard():
     html_content = """
@@ -210,7 +184,6 @@ def admin_dashboard():
                     <tr><th>Name</th><th>Email</th><th>Role</th></tr>
                 </table>
             </div>
-
 
             <script>
                 // We mock the token here for simplicity in this localhost dashboard.
@@ -260,7 +233,6 @@ def admin_dashboard():
                     }
                     document.getElementById("usersTable").innerHTML = table;
                 }
-
 
                 window.onload = function() {
                     loadUsers();

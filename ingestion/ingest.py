@@ -1,13 +1,3 @@
-# ============================================================
-# INGESTION PIPELINE
-# Runs ONCE to load, chunk, embed, and store your documents.
-# All settings are read from the .env file — no hard-coded values.
-#
-# Supported document types (via Unstructured.io):
-#   PDF, DOCX, PPTX, XLSX, HTML, TXT, and more
-# Just drop any file into the DOCS_DIR folder and run this script.
-# ============================================================
-
 import sys
 import os
 sys.stdout.reconfigure(encoding="utf-8")
@@ -18,15 +8,10 @@ load_dotenv()  # Reads all values from .env file automatically
 from pathlib import Path
 from typing import TypedDict, List
 
-# pyrefly: ignore [missing-import]
 from langchain_huggingface import HuggingFaceEmbeddings
-# pyrefly: ignore [missing-import]
 from langchain_experimental.text_splitter import SemanticChunker
-# pyrefly: ignore [missing-import]
 from pymilvus import MilvusClient
-# pyrefly: ignore [missing-import]
 from langchain_core.documents import Document
-# pyrefly: ignore [missing-import]
 from langgraph.graph import StateGraph, START, END
 from pymilvus import CollectionSchema, FieldSchema, DataType
 from datetime import datetime
@@ -47,7 +32,6 @@ SUPPORTED_EXTENSIONS = {
     ".eml", ".msg", ".rst", ".rtf", ".csv"
 }
 
-
 def get_milvus_client():
     uri = MILVUS_URI
     try:
@@ -66,24 +50,12 @@ def get_milvus_client():
         print(f"  [Fallback] Reverting to local Milvus Lite ({MILVUS_FALLBACK})")
         return MilvusClient(MILVUS_FALLBACK), MILVUS_FALLBACK
 
-
-# ============================================================
-# STEP 1: Define the pipeline state
-# LangGraph passes this dictionary between every node.
-# Each node reads from it and writes back to it.
-# ============================================================
-
 class IngestionState(TypedDict):
     docs_dir:        str           # folder containing documents (from .env)
     documents:       List[Document]
     chunks:          List[Document]
     embedding_model: object
     vector_db:       object
-
-
-# ============================================================
-# STEP 2: Define each node (each node = one step)
-# ============================================================
 
 def node_load_document(state: IngestionState) -> dict:
     """
@@ -179,7 +151,6 @@ def node_load_document(state: IngestionState) -> dict:
     print(f"\n  Total documents loaded: {len(documents)}")
     return {"documents": documents}
 
-
 def node_load_embedding_model(state: IngestionState) -> dict:
     """
     OLD: SentenceTransformer("all-MiniLM-L6-v2")  <- direct, not LangChain compatible
@@ -195,7 +166,6 @@ def node_load_embedding_model(state: IngestionState) -> dict:
     print("  Embedding model ready.")
 
     return {"embedding_model": embedding_model}
-
 
 def node_chunk_documents(state: IngestionState) -> dict:
     """
@@ -221,7 +191,6 @@ def node_chunk_documents(state: IngestionState) -> dict:
         print(f"  Chunk {i+1}: {chunk.page_content[:60]}...")
 
     return {"chunks": chunks}
-
 
 def node_store_vectors(state: IngestionState) -> dict:
     """
@@ -287,12 +256,6 @@ def node_store_vectors(state: IngestionState) -> dict:
 
     return {"vector_db": {"client": client, "uri": actual_uri}}
 
-
-# ============================================================
-# STEP 3: Build the LangGraph pipeline
-# Connect the nodes in order. LangGraph controls the flow.
-# ============================================================
-
 def build_pipeline():
 
     graph = StateGraph(IngestionState)
@@ -311,11 +274,6 @@ def build_pipeline():
     graph.add_edge("store_vectors",   END)
 
     return graph.compile()
-
-
-# ============================================================
-# STEP 4: Run the pipeline
-# ============================================================
 
 if __name__ == "__main__":
 

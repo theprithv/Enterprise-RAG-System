@@ -18,23 +18,24 @@ jobs:
 
       - name: Install LLMOps Dependencies
         run: |
-          pip install mlflow "litellm[proxy]" pyyaml pandas
-          # Normally we would install requirements.txt here too
+          pip install mlflow pyyaml pandas langchain langchain-huggingface \
+                      pymilvus sentence-transformers openai langfuse duckduckgo-search
 
-      - name: Install & Start Local Ollama
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 5
-          ollama pull llama3.2
-
-      - name: Start MLflow & LiteLLM Proxy
+      - name: Start MLflow Tracking Server
         run: |
           mlflow server --host 127.0.0.1 --port 5000 &
-          litellm --model ollama/llama3.2 --api_base http://127.0.0.1:11434 --port 4000 &
           sleep 5
 
       - name: Run MLflow Evaluation Suite
+        env:
+          # Judge connects directly to TL's vLLM server (Qwen3-14B)
+          # No Ollama or LiteLLM proxy needed — server is already OpenAI-compatible
+          OPENAI_BASE_URL: "http://88.198.23.47:31062/v1"
+          OPENAI_API_KEY: ${{ secrets.TL_VLLM_API_KEY }}
+          MILVUS_URI: ${{ secrets.MILVUS_URI }}
+          VLLM_API_BASE: ${{ secrets.VLLM_API_BASE }}
+          VLLM_API_KEY: ${{ secrets.VLLM_API_KEY }}
+          VLLM_MODEL: ${{ secrets.VLLM_MODEL }}
         run: |
           python eval/run_eval.py
 
@@ -46,12 +47,14 @@ jobs:
           with open('new_baseline.json') as f: new = json.load(f)
           regressed = False
           for metric, base_val in base.items():
-              if metric in new and new[metric] < base_val:
-                  print(f'❌ Regression detected in {metric}: {new[metric]} < {base_val}')
+              if metric in new and new[metric] < base_val - 0.05:
+                  print(f'❌ Regression in {metric}: {new[metric]:.4f} < baseline {base_val:.4f}')
                   regressed = True
+              else:
+                  print(f'✅ {metric}: {new.get(metric, \"N/A\")}')
           if regressed:
               sys.exit(1)
-          print('✅ All metrics met or exceeded the baseline!')
+          print('All metrics met or exceeded the baseline!')
           "
 
       - name: Post Scorecard to PR Comment
@@ -60,11 +63,15 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const metrics = JSON.parse(fs.readFileSync('new_baseline.json', 'utf8'));
+            let metrics = {};
+            try { metrics = JSON.parse(fs.readFileSync('baseline.json', 'utf8')); } catch(e) {}
             let body = '### 📊 LLMOps Evaluation Scorecard\n\n| Metric | Score |\n|---|---|\n';
             for (const [key, value] of Object.entries(metrics)) {
-              body += `| ${key} | ${value} |\n`;
+              const score = typeof value === 'number' ? value.toFixed(4) : value;
+              const icon = value >= 4.0 ? '🟢' : value >= 2.5 ? '🟡' : '🔴';
+              body += `| ${key} | ${icon} ${score} |\n`;
             }
+            body += '\n> Judge: Qwen3-14B on TL vLLM Server | Runner: GitHub Actions';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

@@ -66,11 +66,11 @@ cases:
 
   - id: retr-03
     category: retrieval_quality
-    query: "How long is the parental leave policy?"
+    query: "Which days are mandatory in-office days?"
     expected_facts:
-      - "12 weeks of fully paid parental leave."
+      - "Tuesdays and Thursdays are mandatory in-office days."
     must_refuse: false
-    notes: "Fetches specific HR benefit document."
+    notes: "Fetches specific HR policy document."
 
   - id: retr-04
     category: retrieval_quality

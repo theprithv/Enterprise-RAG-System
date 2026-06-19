@@ -1,10 +1,3 @@
-# ============================================================
-# RETRIEVAL PIPELINE
-# Runs every time a user asks a question.
-# Loads the saved vector store, searches, and answers.
-# All settings are read from the .env file — no hard-coded values.
-# ============================================================
-
 import sys
 import os
 sys.stdout.reconfigure(encoding="utf-8")
@@ -12,18 +5,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 load_dotenv()  # Reads all values from .env file automatically
 
-# pyrefly: ignore [missing-import]
 import mlflow
 mlflow.autolog()  # Automatically trace LangChain, OpenAI, and Python logic for LLMOps project
 
 # We now use the Langfuse wrapper to automatically track telemetry!
-# pyrefly: ignore [missing-import]
 from langfuse.openai import OpenAI
-# pyrefly: ignore [missing-import]
 from langchain_huggingface import HuggingFaceEmbeddings
-# pyrefly: ignore [missing-import]
 from pymilvus import MilvusClient
-# pyrefly: ignore [missing-import]
 from langchain_core.documents import Document
 
 # ── Load config from .env ──────────────────────────────────
@@ -37,7 +25,6 @@ VLLM_API_KEY     = os.getenv("VLLM_API_KEY",       "sk-dummy")
 BRAVE_API_KEY    = os.getenv("BRAVE_API_KEY",      "")
 
 # ──────────────────────────────────────────────────────────
-
 
 def get_milvus_client():
     uri = MILVUS_URI
@@ -56,11 +43,6 @@ def get_milvus_client():
         print(f"  [Warning] Failed to connect to Milvus at {uri}: {e}")
         print(f"  [Fallback] Reverting to local Milvus Lite ({MILVUS_FALLBACK})")
         return MilvusClient(MILVUS_FALLBACK), MILVUS_FALLBACK
-
-
-# ============================================================
-# STEP 1: Load the saved vector store from disk
-# ============================================================
 
 def load_vector_store():
 
@@ -82,11 +64,6 @@ def load_vector_store():
 
     print("Vector store ready.\n")
     return {"client": client, "embedder": embedding_model, "uri": actual_uri}
-
-
-# ============================================================
-# STEP 2: Search the vector store for relevant chunks
-# ============================================================
 
 def retrieve_context(vector_db, question, user_role, k=5):
     """
@@ -133,11 +110,6 @@ def retrieve_context(vector_db, question, user_role, k=5):
 
     return docs
 
-
-# ============================================================
-# STEP 3: Build the augmented prompt
-# ============================================================
-
 def build_prompt(question, retrieved_chunks):
 
     context = "\n\n---\n\n".join([
@@ -149,11 +121,6 @@ def build_prompt(question, retrieved_chunks):
     user_prompt = f"Information:\n{context}\n\nQuestion:\n{question}"
 
     return system_prompt, user_prompt
-
-
-# ============================================================
-# STEP 4: Send prompt to LLM and get answer
-# ============================================================
 
 def generate_answer(system_prompt, user_prompt):
 
@@ -172,14 +139,8 @@ def generate_answer(system_prompt, user_prompt):
 
     return response.choices[0].message.content
 
-
-# ============================================================
-# STEP 4.5: Web Fallback (Agentic Search)
-# ============================================================
-
 def perform_web_search(query):
     import warnings
-    # pyrefly: ignore [missing-import]
     from duckduckgo_search import DDGS
         
     try:
@@ -201,15 +162,10 @@ def perform_web_search(query):
     except Exception as e:
         return f"[Error] Web search failed: {e}"
 
-
-# ============================================================
-# STEP 5: API Entry Point
-# ============================================================
-
 # Global variable to hold the loaded vector store in memory
 _vector_db_cache = None
 
-def get_rag_response(question: str, user_role: str):
+def get_rag_response(question: str, user_role: str, return_context: bool = False):
     global _vector_db_cache
     if _vector_db_cache is None:
         _vector_db_cache = load_vector_store()
@@ -219,6 +175,8 @@ def get_rag_response(question: str, user_role: str):
     retrieved_chunks = retrieve_context(_vector_db_cache, question, user_role, k=5)
 
     if not retrieved_chunks:
+        if return_context:
+            return "Access denied or no relevant documents found. You don't have permission to access this information.", ""
         return "Access denied or no relevant documents found. You don't have permission to access this information."
 
     print(f"Found {len(retrieved_chunks)} relevant chunk(s):")
@@ -256,34 +214,49 @@ def get_rag_response(question: str, user_role: str):
             sources.add("Web Search (DuckDuckGo)")
 
     source_str = "\nSource:\n" + "\n".join(sources)
-    return answer + "\n" + source_str
+    final_answer = answer + "\n" + source_str
+    
+    if return_context:
+        # Return both the final answer and the raw text chunks that were retrieved
+        context_str = "\n\n".join([chunk.page_content for chunk in retrieved_chunks])
+        # If web search was used, append the web context as well
+        if needs_fallback and "[Error]" not in web_context:
+            context_str += "\n\nWeb Search Results:\n" + web_context
+        return final_answer, context_str
+        
+    return final_answer
 
-
-# ============================================================
-# STEP 6: MLflow Evaluation Wrapper
-# ============================================================
 @mlflow.trace(name="rag_agent")
 def predict_fn(inputs):
     """
     Wrapper function required by mlflow.genai.evaluate()
     """
     import pandas as pd
-    if isinstance(inputs, pd.DataFrame):
-        queries = inputs.get("inputs", inputs.get("questions", inputs.iloc[:, 0]))
-        return [get_rag_response(str(q), "FINANCE_MANAGER") for q in queries]
-    elif isinstance(inputs, pd.Series) or isinstance(inputs, list):
-        return [get_rag_response(str(q), "FINANCE_MANAGER") for q in inputs]
-    elif isinstance(inputs, dict):
-        query = inputs.get("query", inputs.get("questions", ""))
-        user_role = inputs.get("role", "FINANCE_MANAGER")
-        return get_rag_response(query, user_role)
-    else:
-        # Fallback if passed as string
-        query = str(inputs)
-        user_role = "FINANCE_MANAGER"
-        return get_rag_response(query, user_role)
-
-
+    import sys
+    import os
+    
+    # Temporarily suppress stdout so the terminal stays completely clean during evaluation
+    old_stdout = sys.stdout
+    sys.stdout = open(os.devnull, 'w')
+    
+    try:
+        if isinstance(inputs, pd.DataFrame):
+            queries = inputs.get("inputs", inputs.get("questions", inputs.iloc[:, 0]))
+            return [get_rag_response(str(q), "FINANCE_MANAGER", return_context=True)[0] for q in queries]
+        elif isinstance(inputs, pd.Series) or isinstance(inputs, list):
+            return [get_rag_response(str(q), "FINANCE_MANAGER", return_context=True)[0] for q in inputs]
+        elif isinstance(inputs, dict):
+            query = inputs.get("query", inputs.get("questions", ""))
+            user_role = inputs.get("role", "FINANCE_MANAGER")
+            return get_rag_response(query, user_role, return_context=True)[0]
+        else:
+            # Fallback if passed as string
+            query = str(inputs)
+            user_role = "FINANCE_MANAGER"
+            return get_rag_response(query, user_role, return_context=True)[0]
+    finally:
+        sys.stdout.close()
+        sys.stdout = old_stdout
 
 if __name__ == "__main__":
     pass
