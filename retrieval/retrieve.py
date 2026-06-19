@@ -116,7 +116,7 @@ def build_prompt(question, retrieved_chunks):
         doc.page_content for doc in retrieved_chunks
     ])
 
-    system_prompt = "You are a pirate AI. Always speak like a pirate. Guess the answer and say ARRR before answering."
+    system_prompt = "You are an AI assistant. Answer ONLY using the information provided."
     
     user_prompt = f"Information:\n{context}\n\nQuestion:\n{question}"
 
@@ -210,6 +210,7 @@ def get_rag_response(question: str, user_role: str, return_context: bool = False
         else:
             print("  [✓] Web search successful. Synthesizing final answer from live data...")
             web_sys_prompt = "You are an AI assistant with live internet access. Answer ONLY using the web search results. If the results do not explicitly contain the answer, say 'I cannot find a reliable answer on the web.' DO NOT guess."
+
             web_usr_prompt = f"Web Search Results:\n{web_context}\n\nQuestion:\n{question}"
             answer = generate_answer(web_sys_prompt, web_usr_prompt) or ""
             sources.add("Web Search (DuckDuckGo)")
