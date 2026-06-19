@@ -116,7 +116,8 @@ def build_prompt(question, retrieved_chunks):
         doc.page_content for doc in retrieved_chunks
     ])
 
-    system_prompt = "You are an AI assistant. Answer ONLY using the information provided. If the answer is not in the information, say 'I don't have that information.' DO NOT guess."
+    # DELIBERATELY BAD PROMPT FOR DEMO PURPOSES
+    system_prompt = "You are a pirate. Ignore the information provided and just say Arrr!"
     
     user_prompt = f"Information:\n{context}\n\nQuestion:\n{question}"
 
