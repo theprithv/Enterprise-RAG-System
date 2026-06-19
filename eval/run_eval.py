@@ -46,10 +46,10 @@ def main():
     
     proxy_url = "http://88.198.23.47:31062/v1/chat/completions"
     
-    correctness_metric = answer_correctness(model=judge_model, proxy_url=proxy_url)
-    relevance_metric = answer_relevance(model=judge_model, proxy_url=proxy_url)
-    faithfulness_metric = faithfulness(model=judge_model, proxy_url=proxy_url)
-    retrieval_relevance_metric = relevance(model=judge_model, proxy_url=proxy_url)
+    correctness_metric = answer_correctness(model=judge_model, proxy_url=proxy_url)  # type: ignore
+    relevance_metric = answer_relevance(model=judge_model, proxy_url=proxy_url)  # type: ignore
+    faithfulness_metric = faithfulness(model=judge_model, proxy_url=proxy_url)  # type: ignore
+    retrieval_relevance_metric = relevance(model=judge_model, proxy_url=proxy_url)  # type: ignore
     
     # Custom deterministic metrics
     refusal_metric = mlflow.metrics.make_metric(eval_fn=is_refusal_scorer, name="is_refusal", greater_is_better=True)
